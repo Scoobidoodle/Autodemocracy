@@ -1,0 +1,157 @@
+# not precious about any of this code - it's not mine ... just something from an AI query to get started
+
+
+# Import necessary libraries
+import os
+from flask import Flask, render_template, request, redirect, url_for
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+
+# Initialize the Flask app
+app = Flask(__name__)
+
+# Configure the database
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///voting_app.db'
+app.config['SECRET_KEY'] = 'super-secret-key'
+db = SQLAlchemy(app)
+
+# Define the User model
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password = db.Column(db.String(120), nullable=False)
+    verified = db.Column(db.Boolean, default=False)
+
+# Define the Vote model
+class Vote(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    evidence_for = db.Column(db.Text, nullable=False)
+    evidence_against = db.Column(db.Text, nullable=False)
+    total_votes = db.Column(db.Integer, default=0)
+
+# Define the VoteResult model
+class VoteResult(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    vote_id = db.Column(db.Integer, db.ForeignKey('vote.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    option = db.Column(db.String(1), nullable=False) # 'Y' for Yes, 'N' for No
+
+# Initialize the LoginManager
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+# Load the user from the session
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+# Define the home page route
+@app.route('/')
+def home():
+    return render_template('home.html')
+
+# Define the login page route
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('home'))
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password, password):
+            login_user(user)
+            return redirect(url_for('home'))
+    return render_template('login.html')
+
+# Define the logout page route
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('home'))
+
+# Define the register page route
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for('home'))
+    if request.method == 'POST':
+        username = request.form['username']
+        email = request.form['email']
+        password = request.form['password']
+        hashed_password = generate_password_hash(password, method='sha256')
+        new_user = User(username=username, email=email, password=hashed_password)
+        db.session.add(new_user)
+        db.session.commit()
+        return redirect(url_for('login'))
+    return render_template('register.html')
+
+# Define the create vote page route
+@app.route('/create-vote', methods=['GET', 'POST'])
+@login_required
+def create_vote():
+    if request.method == 'POST':
+        title = request.form['title']
+        description = request.form['description']
+        evidence_for = request.form['evidence_for']
+        evidence_against = request.form['evidence_against']
+        new_vote = Vote(title=title, description=description, evidence_for=evidence_for, evidence_against=evidence_against)
+        db.session.add(new_vote)
+        db.session.commit()
+        return redirect(url_for('home'))
+    return render_template('create_vote.html')
+
+# Define the vote page route
+@app.route('/vote/<int:vote_id>', methods=['GET', 'POST'])
+@login_required
+def vote(vote_id):
+    vote = Vote.query.get_or_404(vote_id)
+    if request.method == 'POST':
+        option = request.form['option']
+        new_vote_result = VoteResult(vote_id=vote_id, user_id=current_user.id, option=option)
+        db.session.add(new_vote_result)
+        db.session.commit()
+        return redirect(url_for('home'))
+    return render_template('vote.html', vote=vote)
+
+# Define the results page route
+@app.route('/results/<int:vote_id>')
+def results(vote_id):
+    vote = Vote.query.get_or_404(vote_id)
+    vote_results = VoteResult.query.filter_by(vote_id=vote_id).all()
+    yes_votes = len([result for result in vote_results if result.option == 'Y'])
+    no_votes = len([result for result in vote_results if result.option == 'N'])
+    return render_template('results.html', vote=vote, yes_votes=yes_votes, no_votes=no_votes)
+
+# Define the moderator page route
+@app.route('/moderator')
+@login_required
+def moderator():
+    if not current_user.verified:
+        return redirect(url_for('home'))
+    return render_template('moderator.html')
+
+# Define the verify user page route
+@app.route('/verify-user/<int:user_id>')
+@login_required
+def verify_user(user_id):
+    if not current_user.verified:
+        return redirect(url_for('home'))
+    user = User.query.get_or_404(user_id)
+    user.verified = True
+    db.session.commit()
+    return redirect(url_for('moderator'))
+
+# Run the app
+if __name__ == '__main__':
+    db.create_all()
+    app.run(debug=True)
+```
+
+This code provides the necessary foundation for your voting app. It includes user authentication and verification, vote creation and voting functionality, and a moderator page for managing verified users. You can modify and extend this code to incorporate additional features and refine the user interface to suit your specific requirements. Remember to thoroughly test the app before deploying it to ensure it functions correctly.
